@@ -47,7 +47,13 @@ class QueueJobRunnerThread(Thread):
 
     def run(self):
         # sleep a bit to let the workers start at ease
-        time.sleep(START_DELAY)
+        try:
+            start_delay = int(
+                config.misc.get("queue_job", {}).get("start_delay")
+            )
+        except (TypeError, ValueError):
+            start_delay = START_DELAY
+        time.sleep(start_delay)
         self.runner.run()
 
     def stop(self):
