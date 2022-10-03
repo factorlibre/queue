@@ -46,7 +46,7 @@ class TestJobChannel(common.TransactionCase):
         # not uses here due to its 'flush()' method inside it and exception raises
         # before the line 'self.env["base"].flush()'. So, we are expecting an IntegrityError.
         try:
-            self.env["base"].flush()
+            self.env.flush_all()
         except IntegrityError as ex:
             self.assertIn("queue_job_channel_name_uniq", ex.pgerror)
         else:
