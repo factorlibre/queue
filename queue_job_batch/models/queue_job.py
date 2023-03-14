@@ -8,7 +8,7 @@ class QueueJob(models.Model):
     _inherit = 'queue.job'
 
     job_batch_id = fields.Many2one(
-        'queue.job.batch'
+        'queue.job.batch', index=True
     )
 
     @api.model
