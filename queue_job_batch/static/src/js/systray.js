@@ -131,7 +131,7 @@ odoo.define('queue_job_batch.systray', function (require) {
 
     });
 
-    SystrayMenu.Items.push(QueueJobBatchMenu);
+    // SystrayMenu.Items.push(QueueJobBatchMenu);
 
     return {
         QueueJobBatchMenu: QueueJobBatchMenu,
