@@ -109,18 +109,32 @@ class QueueJobBatch(models.Model):
         })
         return self.sudo().create(vals).sudo(self.env.uid)
 
-    @api.depends('job_ids')
     def _compute_job_count(self):
+        if not self:
+            return
+
+        query = """
+            SELECT
+                job_batch_id,
+                COUNT(*) as total_count,
+                COUNT(CASE WHEN state = 'done' THEN 1 END) as done_count,
+                COUNT(CASE WHEN state = 'failed' THEN 1 END) as failed_count
+            FROM queue_job
+            WHERE job_batch_id IN %s
+            GROUP BY job_batch_id
+        """
+
+        self.env.cr.execute(query, [tuple(self.ids)])
+        result = {row[0]: row for row in self.env.cr.fetchall()}
+
         for record in self:
-            job_count = len(record.job_ids)
-            failed_job_count = len(record.job_ids.filtered(
-                lambda r: r.state == 'failed'
-            ))
-            done_job_count = len(record.job_ids.filtered(
-                lambda r: r.state == 'done'
-            ))
-            record.job_count = job_count
-            record.finished_job_count = done_job_count
-            record.failed_job_count = failed_job_count
-            record.completeness = done_job_count / max(1, job_count)
-            record.failed_percentage = failed_job_count / max(1, job_count)
+            counts = result.get(record.id, (record.id, 0, 0, 0))
+            total_count = counts[1]
+            done_count = counts[2]
+            failed_count = counts[3]
+
+            record.job_count = total_count
+            record.finished_job_count = done_count
+            record.failed_job_count = failed_count
+            record.completeness = done_count / max(1, total_count)
+            record.failed_percentage = failed_count / max(1, total_count)
