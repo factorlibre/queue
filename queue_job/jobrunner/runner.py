@@ -348,11 +348,11 @@ class Database(object):
             WHERE
                 id in (
                     SELECT
-                        id
+                        queue_job_id
                     FROM
-                        queue_job_locks
+                        queue_job_lock
                     WHERE
-                        id in (
+                        queue_job_id in (
                             SELECT
                                 id
                             FROM
