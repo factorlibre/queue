@@ -363,6 +363,17 @@ class Database(object):
                                 (now() AT TIME ZONE 'utc' - INTERVAL '10 sec')
                         )
                     FOR UPDATE SKIP LOCKED
+                ) OR id in (
+                    SELECT
+                        queue_job.id
+                    FROM queue_job
+                       LEFT JOIN queue_job_lock
+                          ON queue_job.id=queue_job_lock.queue_job_id
+                    WHERE
+                        queue_job.state IN ('enqueued')
+                        AND queue_job.date_enqueued <
+                            (now() AT TIME ZONE 'utc' - INTERVAL '60 sec')
+                        AND queue_job_lock.queue_job_id IS NULL
                 )
             RETURNING uuid
             """
