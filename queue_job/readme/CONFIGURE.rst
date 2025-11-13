@@ -41,3 +41,5 @@
 
 .. [1] It works with the threaded Odoo server too, although this way
        of running Odoo is obviously not for production purposes.
+
+* Jobs that remain in `enqueued` or `started` state (because, for instance, their worker has been killed) will be automatically re-queued.

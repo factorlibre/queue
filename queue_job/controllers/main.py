@@ -43,7 +43,7 @@ class RunJobController(http.Controller):
         job.set_started()
         job.store()
         http.request.env.cr.commit()
-
+        job.lock()
         _logger.debug('%s started', job)
         job.perform()
         job.set_done()

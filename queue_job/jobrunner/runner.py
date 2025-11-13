@@ -108,22 +108,6 @@ Caveat
 * After creating a new database or installing queue_job on an
   existing database, Odoo must be restarted for the runner to detect it.
 
-* When Odoo shuts down normally, it waits for running jobs to finish.
-  However, when the Odoo server crashes or is otherwise force-stopped,
-  running jobs are interrupted while the runner has no chance to know
-  they have been aborted. In such situations, jobs may remain in
-  ``started`` or ``enqueued`` state after the Odoo server is halted.
-  Since the runner has no way to know if they are actually running or
-  not, and does not know for sure if it is safe to restart the jobs,
-  it does not attempt to restart them automatically. Such stale jobs
-  therefore fill the running queue and prevent other jobs to start.
-  You must therefore requeue them manually, either from the Jobs view,
-  or by running the following SQL statement *before starting Odoo*:
-
-.. code-block:: sql
-
-  update queue_job set state='pending' where state in ('started', 'enqueued')
-
 .. rubric:: Footnotes
 
 .. [1] From a security standpoint, it is safe to have an anonymous HTTP
@@ -250,7 +234,8 @@ def _async_http_get(scheme, host, port, user, password, db_name, job_uuid):
             # for codes between 500 and 600
             response.raise_for_status()
         except requests.Timeout:
-            set_job_pending()
+            # A timeout is a normal behaviour, it shouldn't be logged as an exception
+            pass
         except Exception:
             _logger.exception("exception in GET %s", url)
             session.cookies.clear()
@@ -336,6 +321,83 @@ class Database(object):
                        "WHERE uuid=%s",
                        (ENQUEUED, uuid))
 
+    def _query_requeue_dead_jobs(self):
+        return """
+            UPDATE
+                queue_job
+            SET
+                state=(
+                    CASE
+                        WHEN
+                            max_retries IS NOT NULL AND
+                            retry IS NOT NULL AND
+                            retry>max_retries
+                        THEN 'failed'
+                        ELSE 'pending'
+                    END),
+                retry=(CASE WHEN state='started' THEN COALESCE(retry,0)+1 ELSE retry END),
+                exc_info=(
+                    CASE
+                        WHEN
+                            max_retries IS NOT NULL AND
+                            retry IS NOT NULL AND
+                            retry>max_retries
+                        THEN 'Job found dead after too many retries'
+                        ELSE exc_info
+                    END)
+            WHERE
+                id in (
+                    SELECT
+                        id
+                    FROM
+                        queue_job_locks
+                    WHERE
+                        id in (
+                            SELECT
+                                id
+                            FROM
+                                queue_job
+                            WHERE
+                                state IN ('enqueued','started')
+                                AND date_enqueued <
+                                (now() AT TIME ZONE 'utc' - INTERVAL '10 sec')
+                        )
+                    FOR UPDATE SKIP LOCKED
+                )
+            RETURNING uuid
+            """
+
+    def requeue_dead_jobs(self):
+        """
+        Set started and enqueued jobs but not locked to pending
+
+        A job is locked when it's being executed
+        When a job is killed, it releases the lock
+
+        If the number of retries exceeds the number of max retries,
+        the job is set as 'failed' with the error 'JobFoundDead'.
+
+        Adding a buffer on 'date_enqueued' to check
+        that it has been enqueued for more than 10sec.
+        This prevents from requeuing jobs before they are actually started.
+
+        When Odoo shuts down normally, it waits for running jobs to finish.
+        However, when the Odoo server crashes or is otherwise force-stopped,
+        running jobs are interrupted while the runner has no chance to know
+        they have been aborted.
+        """
+
+        with closing(self.conn.cursor()) as cr:
+            query = self._query_requeue_dead_jobs()
+
+            cr.execute(query)
+
+            for (uuid,) in cr.fetchall():
+                _logger.warning(
+                    "Re-queued job with uuid: %s",
+                    uuid,
+                )
+
 
 class QueueJobRunner(object):
 
@@ -417,6 +479,11 @@ class QueueJobRunner(object):
                         self.channel_manager.notify(db_name, *job_data)
                 _logger.info('queue job runner ready for db %s', db_name)
 
+    def requeue_dead_jobs(self):
+        for db in self.db_by_name.values():
+            if db.has_queue_job:
+                db.requeue_dead_jobs()
+
     def run_jobs(self):
         now = _odoo_now()
         for job in self.channel_manager.get_jobs_to_run(now):
@@ -496,6 +563,7 @@ class QueueJobRunner(object):
                 _logger.info("database connections ready")
                 # inner loop does the normal processing
                 while not self._stop:
+                    self.requeue_dead_jobs()
                     self.process_notifications()
                     self.run_jobs()
                     self.wait_notification()

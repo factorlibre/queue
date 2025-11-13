@@ -1,6 +1,6 @@
 # Copyright 2013-2016 Camptocamp
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html)
-
+import os
 import inspect
 import functools
 import hashlib
@@ -250,6 +250,70 @@ class Job(object):
             raise NoSuchJobError(
                 'Job %s does no longer exist in the storage.' % job_uuid)
         return cls._load_from_db_record(stored)
+
+    @classmethod
+    def load_many(cls, env, job_uuids):
+        """Read jobs in batch from the Database
+
+        Jobs not found are ignored.
+        """
+        recordset = cls.db_records_from_uuids(env, job_uuids)
+        return {cls._load_from_db_record(record) for record in recordset}
+
+    def add_lock_record(self):
+        """
+        Create row in db to be locked once the job is performed
+        """
+        self.env.cr.execute(
+            """
+            INSERT INTO
+                queue_job_locks (id)
+            SELECT
+                id
+            FROM
+                queue_job
+            WHERE
+                uuid = %s
+            ON CONFLICT(id)
+            DO NOTHING;
+        """,
+            [self.uuid],
+        )
+
+    def lock(self):
+        """
+        Lock row of job that is being performed
+
+        If a job cannot be locked,
+        it means that the job wasn't started,
+        a RetryableJobError is thrown.
+        """
+        self.env.cr.execute(
+            """
+            SELECT
+                *
+            FROM
+                queue_job_locks
+            WHERE
+                id in (
+                    SELECT
+                        id
+                    FROM
+                        queue_job
+                    WHERE
+                        uuid = %s
+                        AND state='started'
+                )
+            FOR UPDATE;
+        """,
+            [self.uuid],
+        )
+
+        # 1 job should be locked
+        if 1 != len(self.env.cr.fetchall()):
+            raise RetryableJobError(
+                f"Trying to lock job that wasn't started, uuid: {self.uuid}"
+            )
 
     @classmethod
     def _load_from_db_record(cls, job_db_record):
@@ -609,6 +673,8 @@ class Job(object):
     def set_started(self):
         self.state = STARTED
         self.date_started = datetime.now()
+        self.worker_pid = os.getpid()
+        self.add_lock_record()
 
     def set_done(self, result=None):
         self.state = DONE
