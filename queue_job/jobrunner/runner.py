@@ -375,7 +375,45 @@ class Database:
                                 (now() AT TIME ZONE 'utc' - INTERVAL '10 sec')
                         )
                     FOR UPDATE SKIP LOCKED
-                ) OR id in (
+                )
+            RETURNING uuid
+            """
+
+    def _query_requeue_dead_jobs_no_lock(self):
+        return """
+            UPDATE
+                queue_job
+            SET
+                state=(
+                    CASE
+                        WHEN
+                            max_retries IS NOT NULL AND
+                            retry IS NOT NULL AND
+                            retry>max_retries
+                        THEN 'failed'
+                        ELSE 'pending'
+                    END),
+                retry=(CASE WHEN state='started' THEN COALESCE(retry,0)+1 ELSE retry END),
+                exc_name=(
+                    CASE
+                        WHEN
+                            max_retries IS NOT NULL AND
+                            retry IS NOT NULL AND
+                            retry>max_retries
+                        THEN 'JobFoundDead'
+                        ELSE exc_name
+                    END),
+                exc_info=(
+                    CASE
+                        WHEN
+                            max_retries IS NOT NULL AND
+                            retry IS NOT NULL AND
+                            retry>max_retries
+                        THEN 'Job found dead after too many retries'
+                        ELSE exc_info
+                    END)
+            WHERE
+                id in (
                     SELECT
                         queue_job.id
                     FROM queue_job
@@ -417,6 +455,16 @@ class Database:
 
             for (uuid,) in cr.fetchall():
                 _logger.warning("Re-queued dead job with uuid: %s", uuid)
+
+        with closing(self.conn.cursor()) as cr:
+            query = self._query_requeue_dead_jobs_no_lock()
+
+            cr.execute(query)
+
+            for (uuid,) in cr.fetchall():
+                _logger.warning(
+                    "Re-queued enqueued job without lock with uuid: %s", uuid
+                )
 
 
 class QueueJobRunner:
