@@ -206,8 +206,6 @@
         <field name="model">queue.job</field>
         <field name="arch" type="xml">
             <search string="Jobs">
-                <field name="uuid" />
-                <field name="graph_uuid" />
                 <field name="name" />
                 <field name="func_string" />
                 <field name="channel" />
@@ -218,6 +216,8 @@
                 <field name="exc_message" />
                 <field name="exc_info" />
                 <field name="result" />
+                <field name="uuid" />
+                <field name="graph_uuid" />
                 <field
                     name="company_id"
                     groups="base.group_multi_company"
