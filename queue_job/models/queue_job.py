@@ -89,11 +89,11 @@ class QueueJob(models.Model):
     graph_jobs_count = fields.Integer(compute="_compute_graph_jobs_count")
     args = JobSerialized(readonly=True, base_type=tuple)
     kwargs = JobSerialized(readonly=True, base_type=dict)
-    func_string = fields.Char(string="Task", readonly=True)
+    func_string = fields.Char(string="Task", readonly=True, unaccent=False)
 
     state = fields.Selection(STATES, readonly=True, required=True, index=True)
     priority = fields.Integer(group_operator=False)
-    exc_name = fields.Char(string="Exception", readonly=True)
+    exc_name = fields.Char(string="Exception", readonly=True, unaccent=False)
     exc_message = fields.Char(string="Exception Message", readonly=True, tracking=True)
     exc_info = fields.Text(string="Exception Info", readonly=True)
     result = fields.Text(readonly=True)
