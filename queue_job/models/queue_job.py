@@ -73,8 +73,8 @@ class QueueJob(models.Model):
     )
     name = fields.Char(string="Description", readonly=True)
 
-    model_name = fields.Char(string="Model", readonly=True)
-    method_name = fields.Char(readonly=True)
+    model_name = fields.Char(string="Model", readonly=True, unaccent=False)
+    method_name = fields.Char(readonly=True, unaccent=False)
     # record_ids field is only for backward compatibility (e.g. used in related
     # actions), can be removed (replaced by "records") in 14.0
     record_ids = JobSerialized(compute="_compute_record_ids", base_type=list)
@@ -94,9 +94,11 @@ class QueueJob(models.Model):
     state = fields.Selection(STATES, readonly=True, required=True, index=True)
     priority = fields.Integer(group_operator=False)
     exc_name = fields.Char(string="Exception", readonly=True, unaccent=False)
-    exc_message = fields.Char(string="Exception Message", readonly=True, tracking=True)
-    exc_info = fields.Text(string="Exception Info", readonly=True)
-    result = fields.Text(readonly=True)
+    exc_message = fields.Char(
+        string="Exception Message", readonly=True, tracking=True, unaccent=False
+    )
+    exc_info = fields.Text(string="Exception Info", readonly=True, unaccent=False)
+    result = fields.Text(readonly=True, unaccent=False)
 
     date_created = fields.Datetime(string="Created Date", readonly=True)
     date_started = fields.Datetime(string="Start Date", readonly=True)
@@ -119,14 +121,16 @@ class QueueJob(models.Model):
         "Retries are infinite when empty.",
     )
     # FIXME the name of this field is very confusing
-    channel_method_name = fields.Char(string="Complete Method Name", readonly=True)
+    channel_method_name = fields.Char(
+        string="Complete Method Name", readonly=True, unaccent=False
+    )
     job_function_id = fields.Many2one(
         comodel_name="queue.job.function",
         string="Job Function",
         readonly=True,
     )
 
-    channel = fields.Char(index=True)
+    channel = fields.Char(index=True, unaccent=False)
 
     identity_key = fields.Char(readonly=True)
     worker_pid = fields.Integer(readonly=True)
